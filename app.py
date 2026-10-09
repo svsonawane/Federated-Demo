@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 
 st.set_page_config(page_title="Federated Healthcare", layout="wide")
 
+FED_VERSION = 1
 DELTA = 1e-5
 KEY_COLS = ["patient_id", "diagnosis", "mean radius", "mean texture", "mean perimeter", "mean area", "mean smoothness"]
 HOSPITAL_NAMES = ["City General", "Riverside Medical", "Northside Clinic", "St. Mary's", "Lakeview Health"]
@@ -174,11 +175,14 @@ class Federation:
 
 
 @st.cache_resource
-def get_fed():
+def get_fed(version=FED_VERSION):
     return Federation()
 
 
 fed = get_fed()
+if not hasattr(fed, "users"):
+    st.cache_resource.clear()
+    fed = get_fed()
 
 
 def login_as(username):
