@@ -192,7 +192,6 @@ def login_as(username):
 
 def login_page():
     st.title("Federated Healthcare Platform")
-    st.caption("Hospitals learn together without ever sharing patient records.")
     t_in, t_up, t_demo = st.tabs(["Sign in", "Sign up", "Demo accounts"])
 
     with t_in:
@@ -209,7 +208,6 @@ def login_page():
                     st.error("Invalid username or password")
 
     with t_up:
-        st.caption("Register a new hospital. An admin must approve it before it can join training.")
         with st.form("signup"):
             hospital = st.text_input("Hospital name")
             new_user = st.text_input("Choose a username")
@@ -219,45 +217,13 @@ def login_page():
                 if error:
                     st.error(error)
                 else:
-                    st.success("Account created. Open the Sign in tab. An admin must approve your hospital before you can train.")
+                    st.success("Account created. Wait for admin approval, then sign in.")
 
     with t_demo:
-        st.caption("One click to explore each profile.")
         for username, rec in fed.users.items():
-            if not rec["demo"]:
-                continue
-            c1, c2 = st.columns([1, 3])
-            c1.button(f"Sign in as {username}", key=f"demo_{username}", on_click=login_as, args=(username,), width="stretch")
-            if rec["role"] == "Hospital":
-                c2.write(f"Hospital: {rec['hospital']}. Local patients, training, risk checks.")
-            elif rec["role"] == "Admin":
-                c2.write("Admin: privacy policy, hospital approvals, audit log.")
-            else:
-                c2.write("Central Server: aggregates updates, tracks model and privacy budget.")
-
-
-def how_it_works_page():
-    st.title("How it works")
-    st.markdown(
-        """
-**Federated learning.** Each hospital keeps its patient records. Instead of sending data to a central place, every hospital trains the model on its own patients and sends back only a small list of numbers (a model update). The central server averages the updates into a better global model and sends it back. Repeat for many rounds.
-
-**The three profiles**
-- **Hospital**: owns private patient data, trains locally, submits updates, uses the global model for risk checks.
-- **Central Server**: collects updates, runs aggregation, tracks accuracy and the privacy budget. It never sees patient records.
-- **Admin**: sets the privacy policy, approves hospitals, and reads the audit log.
-
-**Differential privacy (DP).** Two steps protect against someone learning about one patient from the model. *Clipping* limits how much any single hospital can move the model. *Noise* is then added to the combined update. The more noise, the more privacy and the lower the accuracy.
-
-**Privacy budget (epsilon).** Every round leaks a little. Epsilon measures the total leak. A smaller number means stronger privacy. When the budget is used up, training stops.
-
-**Secure aggregation.** Hospitals add random masks to their updates that cancel out when everything is summed. The server learns the sum but not any single hospital's update.
-
-**Reading the model.** The dataset is the Wisconsin breast cancer set. Malignant detection rate (sensitivity) matters most, because missing a malignant case is the costly mistake.
-
-**Limits of this demo.** Secure aggregation is simulated inside one program, noise is added by a trusted server, and the epsilon is an approximate accounting. State resets when the app restarts.
-        """
-    )
+            if rec["demo"]:
+                label = f"Sign in as {username}" + (f" ({rec['hospital']})" if rec["hospital"] else "")
+                st.button(label, key=f"demo_{username}", on_click=login_as, args=(username,), width="stretch")
 
 
 def admin_page():
@@ -372,8 +338,6 @@ def server_page():
                 fed.train_local(n)
             fed.aggregate()
             st.rerun()
-        if not ready:
-            st.caption("Aggregation needs updates from at least 2 approved hospitals.")
 
         if fed.history:
             hist = pd.DataFrame(fed.history).set_index("round")
@@ -405,7 +369,6 @@ def server_page():
             top = w.reindex(w.abs().sort_values(ascending=False).head(8).index)
             st.subheader("Most influential features")
             st.bar_chart(top)
-            st.caption("Positive weights push predictions toward benign, negative toward malignant.")
             st.download_button("Download global model (JSON)", json.dumps(fed.w.tolist()), "global_model.json")
 
     with t_privacy:
@@ -418,7 +381,6 @@ def server_page():
                 hide_index=True,
                 width="stretch",
             )
-            st.caption("With secure aggregation the masks hide each hospital's real update. Only the sum is meaningful.")
         else:
             st.info("No round has been aggregated yet.")
         if p["dp"] and fed.history:
@@ -432,9 +394,9 @@ def hospital_page(name):
     approved = fed.approved[name]
     st.title(name)
     if approved:
-        st.success("Approved to participate. Patient records never leave this hospital.")
+        st.success("Approved to participate.")
     else:
-        st.error("Waiting for admin approval. You can explore your data but cannot train yet.")
+        st.error("Waiting for admin approval.")
 
     t_over, t_data, t_train, t_risk = st.tabs(["Overview", "Patient data", "Training", "Risk check"])
 
@@ -457,7 +419,6 @@ def hospital_page(name):
             st.dataframe(mine[["time", "action"]], hide_index=True, width="stretch")
 
     with t_data:
-        st.caption("This table exists only at your hospital. It is never sent to the server.")
         a, b, c = st.columns(3)
         dx = a.selectbox("Diagnosis", ["All", "Malignant", "Benign"])
         query = b.text_input("Search patient ID")
@@ -482,11 +443,6 @@ def hospital_page(name):
         if st.button("Train locally and submit update", type="primary", disabled=not approved or submitted or exhausted):
             fed.train_local(name)
             st.rerun()
-        p = fed.policy
-        st.caption(
-            f"Policy: DP {'on' if p['dp'] else 'off'}, secure aggregation {'on' if p['secure'] else 'off'}, "
-            f"clip {p['clip']}, noise {p['sigma']}, {p['epochs']} local epochs"
-        )
         info = fed.last_train.get(name)
         if info:
             st.subheader(f"What left your hospital in round {info['round']}")
@@ -496,7 +452,6 @@ def hospital_page(name):
             c3.metric("Update size (raw)", f"{info['raw_norm']:.2f}")
             c4.metric("Update size (sent)", f"{info['sent_norm']:.2f}")
             st.bar_chart(pd.Series(info["update"], index=fed.feature_names + ["bias"]))
-            st.caption(f"Only these {len(info['update'])} numbers are shared, not your {len(y)} patient records.")
 
     with t_risk:
         if fed.round == 0:
@@ -517,7 +472,6 @@ def hospital_page(name):
             top = contrib.reindex(contrib.abs().sort_values(ascending=False).head(6).index)
             st.subheader("Why the model decided this")
             st.bar_chart(top)
-            st.caption("Positive bars push toward benign, negative toward malignant.")
 
 
 if st.session_state.get("user") not in fed.users:
@@ -529,7 +483,6 @@ user = fed.users[st.session_state.user]
 with st.sidebar:
     st.write(f"Signed in as **{st.session_state.user}**")
     st.write(user["role"] + (f" at {user['hospital']}" if user["hospital"] else ""))
-    page = st.radio("Page", ["Workspace", "How it works"])
     if st.button("Refresh"):
         st.rerun()
     if st.button("Sign out"):
@@ -537,9 +490,7 @@ with st.sidebar:
         del st.session_state.user
         st.rerun()
 
-if page == "How it works":
-    how_it_works_page()
-elif user["role"] == "Admin":
+if user["role"] == "Admin":
     admin_page()
 elif user["role"] == "Central Server":
     server_page()
